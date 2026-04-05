@@ -1,3 +1,22 @@
-CREATE QUERY risk_propagation() FOR GRAPH MyGraph {
-    # Propagate risk through edges
+CREATE QUERY risk_propagation(VERTEX<Prompt> prompt_id) FOR GRAPH AIRiskGraph {
+  
+  SumAccum<FLOAT> @propagated_risk;
+  SetAccum<STRING> @@affected_systems;
+
+  Start = {prompt_id};
+
+  Agents = SELECT a FROM Start:p -(PROMPT_TRIGGERS_AGENT)-> Agent:a
+           ACCUM a.@propagated_risk += p.risk_score * 0.9;
+
+  Tools = SELECT t FROM Agents:a -(AGENT_USES_TOOL)-> Tool:t
+          ACCUM t.@propagated_risk += a.@propagated_risk * t.risk_level;
+
+  Actions = SELECT ac FROM Tools:t -(TOOL_EXECUTES_ACTION)-> Action:ac
+            ACCUM ac.@propagated_risk += t.@propagated_risk * ac.severity;
+
+  Systems = SELECT s FROM Actions:ac -(ACTION_AFFECTS_SYSTEM)-> System:s
+            ACCUM s.@propagated_risk += ac.@propagated_risk * s.criticality,
+                  @@affected_systems += s.system_name;
+
+  PRINT @@affected_systems AS affected_systems;
 }
