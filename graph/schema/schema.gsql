@@ -1,0 +1,2 @@
+CREATE VERTEX Prompt(PRIMARY_ID id STRING, content STRING, risk_score FLOAT)
+CREATE EDGE CONTAINS(FROM Prompt, TO User)

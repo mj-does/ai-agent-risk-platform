@@ -1,0 +1,8 @@
+{
+  "name": "ai-agent-project",
+  "version": "1.0.0",
+  "description": "Multi-agent security system",
+  "scripts": {
+    "start": "echo 'Run backend and frontend separately' && exit 1"
+  }
+}
