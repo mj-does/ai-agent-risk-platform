@@ -1,0 +1,60 @@
+CREATE VERTEX Prompt (
+  PRIMARY_ID prompt_id STRING,
+  text STRING,
+  risk_score FLOAT,
+  intent STRING,
+  timestamp STRING,
+  status STRING
+)
+
+CREATE VERTEX Agent (
+  PRIMARY_ID agent_id STRING,
+  agent_name STRING,
+  agent_type STRING
+)
+
+CREATE VERTEX Tool (
+  PRIMARY_ID tool_id STRING,
+  tool_name STRING,
+  risk_level FLOAT
+)
+
+CREATE VERTEX Action (
+  PRIMARY_ID action_id STRING,
+  action_name STRING,
+  severity FLOAT
+)
+
+CREATE VERTEX System (
+  PRIMARY_ID system_id STRING,
+  system_name STRING,
+  criticality FLOAT
+)
+
+CREATE DIRECTED EDGE PROMPT_TRIGGERS_AGENT (
+  FROM Prompt, TO Agent,
+  risk_passed FLOAT
+)
+
+CREATE DIRECTED EDGE AGENT_USES_TOOL (
+  FROM Agent, TO Tool,
+  timestamp STRING
+)
+
+CREATE DIRECTED EDGE TOOL_EXECUTES_ACTION (
+  FROM Tool, TO Action,
+  timestamp STRING
+)
+
+CREATE DIRECTED EDGE ACTION_AFFECTS_SYSTEM (
+  FROM Action, TO System,
+  impact_score FLOAT
+)
+
+CREATE GRAPH AIRiskGraph(
+  Prompt, Agent, Tool, Action, System,
+  PROMPT_TRIGGERS_AGENT,
+  AGENT_USES_TOOL,
+  TOOL_EXECUTES_ACTION,
+  ACTION_AFFECTS_SYSTEM
+)
