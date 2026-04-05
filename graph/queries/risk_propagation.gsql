@@ -1,0 +1,3 @@
+CREATE QUERY risk_propagation() FOR GRAPH MyGraph {
+    # Propagate risk through edges
+}
