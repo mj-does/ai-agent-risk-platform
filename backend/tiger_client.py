@@ -18,8 +18,21 @@ HEADERS = {
 # =========================
 def _post(payload):
     url = f"{TG_HOST}/graph/{TG_GRAPH}"
-    response = requests.post(url, headers=HEADERS, json=payload)
-    return response.json()
+    
+    # 🔥 LOGGING FOR DEMO PROOF
+    print("\n========== TIGERGRAPH REQUEST ==========")
+    print("URL:", url)
+    print("PAYLOAD:", payload)
+    print("========================================\n")
+
+    try:
+        response = requests.post(url, headers=HEADERS, json=payload, timeout=5)
+        print("Response Status:", response.status_code)
+        print("Response Body:", response.text)
+        return response.json()
+    except Exception as e:
+        print("TigerGraph ERROR:", str(e))
+        return {"error": str(e)}
 
 
 # =========================
