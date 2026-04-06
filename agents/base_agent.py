@@ -15,3 +15,6 @@ class BaseAgent:
             return "RESTRICT"
         else:
             return "ALLOW"
+# Base agent class with shared functionality
+class BaseAgent:
+    pass

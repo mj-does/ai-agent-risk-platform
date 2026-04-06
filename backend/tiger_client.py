@@ -16,6 +16,7 @@ def get_token():
     if r.status_code == 200:
         return r.json().get("token", "")
     return None
+
 def get_headers():
     token = get_token()
     if token:
@@ -101,6 +102,7 @@ def insert_edge_tool_action(conn, tool_id, action_id, timestamp):
 
 def insert_edge_action_system(conn, action_id, system_id, impact_score):
     upsert_edge("Action", action_id, "ACTION_AFFECTS_SYSTEM", "System", system_id, {"impact_score": impact_score})
+
 def get_vertices(vertex_type):
     token = get_token()
     headers = {"Authorization": f"Bearer {token}"} if token else {}

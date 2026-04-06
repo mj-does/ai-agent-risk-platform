@@ -1,4 +1,4 @@
-from tiger_client import get_conn, insert_tool, insert_action, insert_system
+from .tiger_client import get_conn, insert_tool, insert_action, insert_system
 
 conn = get_conn()
 

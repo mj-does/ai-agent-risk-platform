@@ -8,3 +8,8 @@ class GitHubAgent(BaseAgent):
         if "repo" in prompt or "commit" in prompt:
             return "GitHub Action Requested"
         return "No GitHub action"
+# Agent for interacting with GitHub
+from .base_agent import BaseAgent
+
+class GitHubAgent(BaseAgent):
+    pass

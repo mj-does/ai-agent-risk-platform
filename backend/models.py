@@ -1,6 +1,12 @@
 from pydantic import BaseModel
 from typing import Optional
 
+class PromptRecord(BaseModel):
+    id: int
+    prompt: str
+    risk_score: float
+    intent: str
+
 class EventPayload(BaseModel):
     event_type: str
     prompt_id: str

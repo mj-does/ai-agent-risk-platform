@@ -26,3 +26,6 @@ def route_prompt(prompt: str):
 
     # Default fallback → send to Terraform (most dangerous)
     return terraform_agent
+# Router agent for directing tasks to specialized agents
+class Router:
+    pass
