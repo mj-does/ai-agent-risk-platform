@@ -1,8 +1,9 @@
-
 # Virtual Environment
 venv/
 .venv/
 env/
+
+# Python
 __pycache__/
 *.pyc
 *.pyo
@@ -18,5 +19,21 @@ __pycache__/
 .vscode/
 .idea/
 
-# Temp folders
+# Node
+node_modules/
+frontend/node_modules/
+
+# Build
+dist/
+build/
+
+# Temp / Test files
 temp_resolve/
+*.txt
+insert_test.py
+check_data.py
+check_secret.py
+
+# OS
+.DS_Store
+Thumbs.db

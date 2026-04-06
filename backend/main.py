@@ -1,4 +1,3 @@
-<<<<<<< HEAD
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
@@ -162,6 +161,4 @@ async def graph_status():
             "systems": len(systems)
         }
     }
-=======
 
->>>>>>> 6305f064f00c8cc89b3331331f0b1161faa9567b
