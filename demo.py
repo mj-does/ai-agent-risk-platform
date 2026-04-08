@@ -33,3 +33,4 @@ for prompt in test_prompts:
     print(f"  Risk Score:      {risk} [{level}]")
     print(f"  Explanation:     {reason}")
     print("-" * 65)
+

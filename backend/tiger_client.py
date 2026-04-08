@@ -8,39 +8,51 @@ TG_HOST = os.getenv("TG_HOST")
 TG_TOKEN = os.getenv("TG_TOKEN")
 TG_GRAPH = os.getenv("TG_GRAPH")
 
+BASE_URL = f"{TG_HOST}:14240/restpp/graph/{TG_GRAPH}"
+
 HEADERS = {
     "Authorization": f"Bearer {TG_TOKEN}",
     "Content-Type": "application/json"
 }
 
-# =========================
-# GENERIC HELPER
-# =========================
+
 def _post(payload):
-    url = f"{TG_HOST}/graph/{TG_GRAPH}"
-    
-    # 🔥 LOGGING FOR DEMO PROOF
+    url = BASE_URL
+
     print("\n========== TIGERGRAPH REQUEST ==========")
     print("URL:", url)
     print("PAYLOAD:", payload)
     print("========================================\n")
 
     try:
-        response = requests.post(url, headers=HEADERS, json=payload, timeout=5)
+        # ⏱️ HARD TIMEOUT (KEY FIX)
+        response = requests.post(
+            url,
+            headers=HEADERS,
+            json=payload,
+            timeout=5   # force fast fail
+        )
+
         print("Response Status:", response.status_code)
         print("Response Body:", response.text)
+
         return response.json()
+
+    except requests.exceptions.Timeout:
+        print("❌ TigerGraph TIMEOUT (network / cloud slow)")
+        return {"error": "timeout"}
+
     except Exception as e:
-        print("TigerGraph ERROR:", str(e))
+        print("❌ TigerGraph ERROR:", str(e))
         return {"error": str(e)}
 
 
 # =========================
-# VERTEX INSERTS
+# VERTICES
 # =========================
 
 def insert_prompt(_, data):
-    payload = {
+    return _post({
         "vertices": {
             "Prompt": {
                 data["prompt_id"]: {
@@ -52,12 +64,11 @@ def insert_prompt(_, data):
                 }
             }
         }
-    }
-    return _post(payload)
+    })
 
 
 def insert_agent(_, data):
-    payload = {
+    return _post({
         "vertices": {
             "Agent": {
                 data["agent_id"]: {
@@ -66,12 +77,11 @@ def insert_agent(_, data):
                 }
             }
         }
-    }
-    return _post(payload)
+    })
 
 
 def insert_tool(_, data):
-    payload = {
+    return _post({
         "vertices": {
             "Tool": {
                 data["tool_id"]: {
@@ -80,12 +90,11 @@ def insert_tool(_, data):
                 }
             }
         }
-    }
-    return _post(payload)
+    })
 
 
 def insert_action(_, data):
-    payload = {
+    return _post({
         "vertices": {
             "Action": {
                 data["action_id"]: {
@@ -94,12 +103,11 @@ def insert_action(_, data):
                 }
             }
         }
-    }
-    return _post(payload)
+    })
 
 
 def insert_system(_, data):
-    payload = {
+    return _post({
         "vertices": {
             "System": {
                 data["system_id"]: {
@@ -108,16 +116,15 @@ def insert_system(_, data):
                 }
             }
         }
-    }
-    return _post(payload)
+    })
 
 
 # =========================
-# EDGE INSERTS
+# EDGES
 # =========================
 
 def insert_edge_prompt_agent(_, prompt_id, agent_id, success):
-    payload = {
+    return _post({
         "edges": {
             "Prompt": {
                 prompt_id: {
@@ -131,12 +138,11 @@ def insert_edge_prompt_agent(_, prompt_id, agent_id, success):
                 }
             }
         }
-    }
-    return _post(payload)
+    })
 
 
 def insert_edge_agent_tool(_, agent_id, tool_id, timestamp):
-    payload = {
+    return _post({
         "edges": {
             "Agent": {
                 agent_id: {
@@ -150,12 +156,11 @@ def insert_edge_agent_tool(_, agent_id, tool_id, timestamp):
                 }
             }
         }
-    }
-    return _post(payload)
+    })
 
 
 def insert_edge_tool_action(_, tool_id, action_id, timestamp):
-    payload = {
+    return _post({
         "edges": {
             "Tool": {
                 tool_id: {
@@ -169,12 +174,11 @@ def insert_edge_tool_action(_, tool_id, action_id, timestamp):
                 }
             }
         }
-    }
-    return _post(payload)
+    })
 
 
 def insert_edge_action_system(_, action_id, system_id, risk_score):
-    payload = {
+    return _post({
         "edges": {
             "Action": {
                 action_id: {
@@ -188,15 +192,10 @@ def insert_edge_action_system(_, action_id, system_id, risk_score):
                 }
             }
         }
-    }
-    return _post(payload)
+    })
 
-
-# =========================
-# FETCH
-# =========================
 
 def get_prompts():
-    url = f"{TG_HOST}/graph/{TG_GRAPH}/vertices/Prompt"
-    response = requests.get(url, headers=HEADERS)
+    url = f"{BASE_URL}/vertices/Prompt"
+    response = requests.get(url, headers=HEADERS, timeout=5)
     return response.json()
