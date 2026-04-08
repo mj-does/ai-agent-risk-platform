@@ -2,7 +2,12 @@ import re
 
 HIGH_RISK_PATTERNS = [
     r"ignore previous instructions",
+    r"ignore all previous instructions",
     r"bypass security",
+    r"reveal.*(?:system|prompt|instructions|secrets)",
+    r"show.*(?:system|prompt|instructions|secrets)",
+    r"leak.*(?:system|prompt|instructions|secrets)",
+    r"exfiltrat(?:e|ion)",
     r"install.*malware",
     r"download.*script",
     r"execute.*shell",

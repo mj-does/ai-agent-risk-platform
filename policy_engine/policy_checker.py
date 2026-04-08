@@ -28,6 +28,9 @@ def check_policies(agent_output: dict):
     if "public_access" in risk_flags:
         violations.append("Public access misconfiguration")
 
+    if "prompt_injection" in risk_flags or "privilege_escalation" in risk_flags:
+        violations.append("Prompt injection / privilege escalation attempt")
+
     if "high_impact" in risk_flags and industry == "finance":
         violations.append("High-risk action in financial system")
 

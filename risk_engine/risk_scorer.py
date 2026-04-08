@@ -17,6 +17,21 @@ def score_risk(agent_output: dict, policy_output: dict, payload: dict):
 
     risk_flags = agent_output.get("risk_flags", [])
     violations = policy_output.get("violations", [])
+    injection_score = agent_output.get("injection_score", 0.0) or 0.0
+    try:
+        injection_score = float(injection_score)
+    except Exception:
+        injection_score = 0.0
+
+    # 🔴 Prompt-injection / privilege escalation signals (high weight)
+    if injection_score >= 0.4:
+        # scale 0–1 detector into up to +60 points
+        risk_score += int(round(min(1.0, injection_score) * 60))
+        risks.append("Prompt injection patterns detected")
+
+    if "privilege_escalation" in risk_flags:
+        risk_score += 25
+        risks.append("Privilege escalation attempt")
 
     # 🔴 Agent-based risks
     if "destructive_action" in risk_flags:
@@ -34,6 +49,10 @@ def score_risk(agent_output: dict, policy_output: dict, payload: dict):
     if "high_impact" in risk_flags:
         risk_score += 20
         risks.append("High impact operation")
+
+    if "prompt_injection" in risk_flags and injection_score < 0.4:
+        risk_score += 20
+        risks.append("Suspicious instruction override attempt")
 
     # 🟠 Policy violations
     violation_count = len(violations)

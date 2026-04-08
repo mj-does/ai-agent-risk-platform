@@ -8,7 +8,15 @@ TG_HOST = os.getenv("TG_HOST")
 TG_TOKEN = os.getenv("TG_TOKEN")
 TG_GRAPH = os.getenv("TG_GRAPH")
 
-BASE_URL = f"{TG_HOST}:14240/restpp/graph/{TG_GRAPH}"
+def _normalize_host(host: str) -> str:
+    h = (host or "").strip().rstrip("/")
+    return h
+
+# TigerGraph Cloud RESTPP is typically served over HTTPS (443) at:
+#   https://<tgcloud-host>/restpp/graph/<graphName>
+# Self-managed installs often use :14240, but hardcoding that breaks cloud deployments.
+HOST = _normalize_host(TG_HOST)
+BASE_URL = f"{HOST}/restpp/graph/{TG_GRAPH}" if HOST and TG_GRAPH else ""
 
 HEADERS = {
     "Authorization": f"Bearer {TG_TOKEN}",
@@ -25,6 +33,9 @@ def _post(payload):
     print("========================================\n")
 
     try:
+        if not url:
+            return {"error": "TigerGraph not configured (missing TG_HOST/TG_GRAPH)"}
+
         # ⏱️ HARD TIMEOUT (KEY FIX)
         response = requests.post(
             url,
@@ -86,7 +97,7 @@ def insert_tool(_, data):
             "Tool": {
                 data["tool_id"]: {
                     "tool_name": {"value": data["tool_name"]},
-                    "risk_level": {"value": data["risk_level"]}
+                    "risk_level": {"value": float(data["risk_level"])}
                 }
             }
         }
@@ -99,7 +110,7 @@ def insert_action(_, data):
             "Action": {
                 data["action_id"]: {
                     "action_name": {"value": data["action_name"]},
-                    "severity": {"value": data["severity"]}
+                    "severity": {"value": float(data["severity"])}
                 }
             }
         }
@@ -112,7 +123,7 @@ def insert_system(_, data):
             "System": {
                 data["system_id"]: {
                     "system_name": {"value": data["system_name"]},
-                    "criticality": {"value": data["criticality"]}
+                    "criticality": {"value": float(data["criticality"])}
                 }
             }
         }
@@ -128,10 +139,10 @@ def insert_edge_prompt_agent(_, prompt_id, agent_id, success):
         "edges": {
             "Prompt": {
                 prompt_id: {
-                    "used_by": {
+                    "PROMPT_TRIGGERS_AGENT": {
                         "Agent": {
                             agent_id: {
-                                "success": {"value": success}
+                                "risk_passed": {"value": 1.0 if success else 0.0}
                             }
                         }
                     }
@@ -146,7 +157,7 @@ def insert_edge_agent_tool(_, agent_id, tool_id, timestamp):
         "edges": {
             "Agent": {
                 agent_id: {
-                    "uses": {
+                    "AGENT_USES_TOOL": {
                         "Tool": {
                             tool_id: {
                                 "timestamp": {"value": timestamp}
@@ -164,7 +175,7 @@ def insert_edge_tool_action(_, tool_id, action_id, timestamp):
         "edges": {
             "Tool": {
                 tool_id: {
-                    "triggers": {
+                    "TOOL_EXECUTES_ACTION": {
                         "Action": {
                             action_id: {
                                 "timestamp": {"value": timestamp}
@@ -182,10 +193,10 @@ def insert_edge_action_system(_, action_id, system_id, risk_score):
         "edges": {
             "Action": {
                 action_id: {
-                    "affects": {
+                    "ACTION_AFFECTS_SYSTEM": {
                         "System": {
                             system_id: {
-                                "risk_score": {"value": risk_score}
+                                "impact_score": {"value": float(risk_score)}
                             }
                         }
                     }
