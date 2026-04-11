@@ -1,3 +1,5 @@
+from typing import Optional
+
 from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel
 import traceback
@@ -49,11 +51,31 @@ class PromptRequest(BaseModel):
     agent_name: str
     industry: str
     use_case: str
+    session_id: Optional[str] = None
+    manual_override: Optional[str] = None  # force_allow | force_block | force_review
 
 
 @app.get("/")
 def root():
     return {"message": "AI Agent Risk Platform running"}
+
+
+@app.get("/integrations")
+def integrations_status():
+    """
+    Quick check of optional integrations (no secrets exposed).
+    TigerGraph is active only when all three env vars are set; graph_logged on /analyze
+    confirms REST calls succeeded.
+    """
+    tg_ready = bool(
+        os.getenv("TG_HOST") and os.getenv("TG_TOKEN") and os.getenv("TG_GRAPH")
+    )
+    llm_ready = bool(os.getenv("GROQ_API_KEY") or os.getenv("OPENAI_API_KEY"))
+    return {
+        "tigergraph_configured": tg_ready,
+        "llm_guard_configured": llm_ready,
+        "llm_semantic_fallback_env": (os.getenv("LLM_SEMANTIC_FALLBACK") or "default:on"),
+    }
 
 
 @app.post("/analyze")
@@ -63,7 +85,9 @@ def analyze_prompt(request: PromptRequest):
             "prompt": request.prompt,
             "agent_name": request.agent_name,
             "industry": request.industry,
-            "use_case": request.use_case
+            "use_case": request.use_case,
+            "session_id": request.session_id,
+            "manual_override": request.manual_override,
         }
 
         # 🔥 RUN YOUR EXISTING PIPELINE
@@ -75,6 +99,7 @@ def analyze_prompt(request: PromptRequest):
         risk_obj = (result or {}).get("risk", {}) or {}
         policy_obj = (result or {}).get("policy", {}) or {}
         agent_used = (result or {}).get("agent_used", "unknown")
+        meta = (result or {}).get("meta") or {}
 
         # `risk_engine.score_risk` produces a point score (commonly 0–100+).
         # For consistent UI + graph logging, expose 0–10 and 0–1 scales.
@@ -95,6 +120,13 @@ def analyze_prompt(request: PromptRequest):
             "policy": policy_obj,
             "agent_used": agent_used,
             "prompt_id": None,
+            "status": meta.get("status") or "clear",
+            "attack_categories": meta.get("attack_categories") or [],
+            "llm_guard_used": bool(meta.get("llm_guard_used")),
+            "regex_matched": meta.get("regex_matched"),
+            "suspicious_structure": meta.get("suspicious_structure"),
+            "session": meta.get("session"),
+            "manual_override": meta.get("manual_override"),
         }
 
         # =========================

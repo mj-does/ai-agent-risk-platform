@@ -1,13 +1,22 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import Sidebar from "./components/Sidebar";
 import Badge from "./components/Badge";
-import RiskMeter from "./components/RiskMeter";
+import DecisionBanner from "./components/DecisionBanner";
 import EvaluationDetail from "./components/EvaluationDetail";
 import SettingsModal from "./components/SettingsModal";
-import { analyzePrompt } from "./api";
+import HeroSlideshow from "./components/HeroSlideshow";
+import SiteFooter from "./components/SiteFooter";
+import { analyzePrompt, getSessionId } from "./api";
+import { formatReasonList } from "./utils/evaluationFormat";
 import { attackPrompts } from "./data";
 
 const STORAGE_KEY = "airisk.ui.v1";
+
+const API_CONTEXT_DEFAULTS = {
+  agent_name: "DevOps Agent",
+  industry: "Technology",
+  use_case: "Automation workflow",
+};
 
 function clamp01(n) {
   if (Number.isNaN(n)) return 0;
@@ -30,29 +39,29 @@ function defaultPolicy() {
   };
 }
 
-function policyDecision({ riskScore, promptText }, policy) {
+function policyDecision({ riskScore, promptText, securityStatus }, policy) {
   const text = (promptText || "").toLowerCase();
   const keywordHit = policy.requireReviewKeywords.some((k) => text.includes(k));
+  if (securityStatus === "review_required") return "REVIEW";
   if (riskScore >= policy.thresholdBlock) return "BLOCK";
   if (keywordHit || riskScore >= policy.thresholdReview) return "REVIEW";
   return "ALLOW";
 }
 
 export default function App() {
-  const [view, setView] = useState("dashboard"); // dashboard | evaluations | policies
+  const [view, setView] = useState("dashboard");
   const [loading, setLoading] = useState(false);
   const [selectedId, setSelectedId] = useState(null);
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const [sidebarOpen, setSidebarOpen] = useState(false);
+  const [evaluateOpen, setEvaluateOpen] = useState(false);
 
-  const [draft, setDraft] = useState({
-    agentName: "DevOps Agent",
-    industry: "Technology",
-    useCase: "Automation workflow",
-    prompt: "",
-  });
-
+  const [promptDraft, setPromptDraft] = useState("");
   const [policy, setPolicy] = useState(defaultPolicy());
   const [evaluations, setEvaluations] = useState([]);
+  const [manualOverride, setManualOverride] = useState(null);
+  const lastSimIndex = useRef(-1);
+  const analysisBusy = useRef(false);
 
   useEffect(() => {
     try {
@@ -94,32 +103,48 @@ export default function App() {
     return { total, blocked, review, avgRisk };
   }, [evaluations]);
 
+  const selectedReasons = useMemo(() => {
+    if (!selected) return [];
+    return formatReasonList(selected.reasons, selected.backendExplanation);
+  }, [selected]);
+
   async function runEvaluation(promptText) {
     const trimmed = (promptText || "").trim();
     if (!trimmed) return;
+    if (analysisBusy.current) return;
 
+    analysisBusy.current = true;
     setLoading(true);
-    const res = await analyzePrompt(trimmed, {
-      agent_name: draft.agentName,
-      industry: draft.industry,
-      use_case: draft.useCase,
-    });
-    setLoading(false);
+    let res;
+    try {
+      res = await analyzePrompt(trimmed, {
+        ...API_CONTEXT_DEFAULTS,
+        session_id: getSessionId(),
+        manual_override: manualOverride,
+      });
+    } finally {
+      setLoading(false);
+      analysisBusy.current = false;
+    }
 
     if (!res) {
       setSettingsOpen(true);
       return;
     }
 
+    setManualOverride(null);
+    setEvaluateOpen(false);
+
     const riskScore = clamp01(res.risk_score);
-    const decision = policyDecision({ riskScore, promptText: trimmed }, policy);
+    const securityStatus = res.security_status || null;
+    const decision = policyDecision(
+      { riskScore, promptText: trimmed, securityStatus },
+      policy
+    );
 
     const ev = {
       id: crypto?.randomUUID?.() || String(Date.now()),
       createdAt: new Date().toISOString(),
-      agentName: draft.agentName,
-      industry: draft.industry,
-      useCase: draft.useCase,
       prompt: trimmed,
       riskScore,
       riskLevel: res.risk_level || null,
@@ -130,6 +155,12 @@ export default function App() {
       promptId: res.prompt_id || null,
       graphLogged: typeof res.graph_logged === "boolean" ? res.graph_logged : null,
       decision,
+      securityStatus,
+      attackCategories: Array.isArray(res.attack_categories)
+        ? res.attack_categories
+        : [],
+      llmGuardUsed: Boolean(res.llm_guard_used),
+      manualOverride: res.manual_override || null,
     };
 
     setEvaluations((prev) => [ev, ...prev]);
@@ -138,407 +169,427 @@ export default function App() {
   }
 
   async function simulateOne() {
-    const randomPrompt =
-      attackPrompts[Math.floor(Math.random() * attackPrompts.length)];
-    await runEvaluation(randomPrompt);
+    if (analysisBusy.current) return;
+    if (attackPrompts.length === 0) return;
+    let idx = Math.floor(Math.random() * attackPrompts.length);
+    if (attackPrompts.length > 1) {
+      let guard = 0;
+      while (idx === lastSimIndex.current && guard < 12) {
+        idx = Math.floor(Math.random() * attackPrompts.length);
+        guard += 1;
+      }
+    }
+    lastSimIndex.current = idx;
+    await runEvaluation(attackPrompts[idx]);
   }
 
-  async function runDemo() {
-    setLoading(true);
-    for (let i = 0; i < attackPrompts.length; i++) {
-      // eslint-disable-next-line no-await-in-loop
-      await runEvaluation(attackPrompts[i]);
-      // eslint-disable-next-line no-await-in-loop
-      await new Promise((r) => setTimeout(r, 450));
-    }
-    setLoading(false);
+  function toggleSidebar() {
+    setSidebarOpen((o) => !o);
   }
 
   return (
-    <div className="app">
-      <Sidebar
-        view={view}
-        onView={setView}
-        evaluations={evaluations}
-        selectedId={selectedId}
-        onSelect={setSelectedId}
-        onOpenSettings={() => setSettingsOpen(true)}
-      />
+    <>
+      <div className="bgMotion" aria-hidden>
+        <div className="bgMotionOrb bgMotionOrb1" />
+        <div className="bgMotionOrb bgMotionOrb2" />
+        <div className="bgMotionOrb bgMotionOrb3" />
+        <div className="bgMotionOrb bgMotionOrb4" />
+      </div>
 
-      <main className="main">
-        <header className="topbar">
-          <div className="topbarTitle">
-            <div className="productName">AI Agent Risk Platform</div>
-            <div className="productSub">
-              Detect malicious intent and prevent unsafe agent actions before access
-              is granted.
+      <div className="appRoot">
+        {sidebarOpen && (
+          <button
+            type="button"
+            className="sidebarBackdrop"
+            aria-label="Close navigation"
+            onClick={() => setSidebarOpen(false)}
+          />
+        )}
+
+        <Sidebar
+          className={`sidebarSlide ${sidebarOpen ? "sidebarSlide--open" : ""}`}
+          view={view}
+          onView={setView}
+          evaluations={evaluations}
+          selectedId={selectedId}
+          onSelect={setSelectedId}
+          onOpenSettings={() => setSettingsOpen(true)}
+          onClose={() => setSidebarOpen(false)}
+        />
+
+        <main className="main mainFluid">
+          <header className="shellTopBar">
+            <button
+              type="button"
+              className="hamburgerBtn"
+              onClick={toggleSidebar}
+              aria-expanded={sidebarOpen}
+              aria-label={sidebarOpen ? "Close menu" : "Open menu"}
+            >
+              <span className="hamburgerBar" />
+              <span className="hamburgerBar" />
+              <span className="hamburgerBar" />
+            </button>
+            <div className="shellTopBarRight">
+              <button
+                type="button"
+                className="btn btnGhost btnSm"
+                onClick={() => setSettingsOpen(true)}
+              >
+                Settings
+              </button>
             </div>
-          </div>
+          </header>
 
-          <div className="topbarActions">
-            <button
-              className="btn btnGhost"
-              type="button"
-              onClick={() => setSettingsOpen(true)}
-            >
-              Settings
-            </button>
-            <button
-              className="btn btnDanger"
-              type="button"
-              onClick={simulateOne}
-              disabled={loading}
-            >
-              {loading ? "Analyzing…" : "Simulate attack"}
-            </button>
-            <button
-              className="btn btnPrimary"
-              type="button"
-              onClick={runDemo}
-              disabled={loading}
-            >
-              Run demo
-            </button>
-          </div>
-        </header>
-
-        {view === "dashboard" && (
-          <div className="grid">
-            <section className="panel panelSpan2">
-              <div className="panelHeader">
-                <div>
-                  <div className="panelTitle">Evaluate access request</div>
-                  <div className="panelSubtitle">
-                    Paste an agent prompt to assess risk and decide whether access
-                    should be allowed.
+          {view === "dashboard" && (
+            <>
+              <section className="hero heroBackdrop">
+                <HeroSlideshow>
+                  <h1 className="heroTitle heroTitle--onBackdrop">
+                    Take control of every agent access request
+                  </h1>
+                  <div className="heroCtaRow heroCtaRow--onBackdrop">
+                    <button
+                      type="button"
+                      className="btn btnHeroPrimary"
+                      onClick={() => void simulateOne()}
+                      disabled={loading}
+                    >
+                      {loading ? "Analyzing…" : "Simulate attack"}
+                    </button>
+                    <button
+                      type="button"
+                      className="btn btnHeroSecondary"
+                      onClick={() => setEvaluateOpen(true)}
+                      disabled={loading}
+                    >
+                      Evaluate prompt <span className="heroCtaArrow" aria-hidden>→</span>
+                    </button>
                   </div>
-                </div>
-                <div className="panelHeaderRight">
-                  <Badge tone="neutral">
-                    Policy: block ≥ {Math.round(policy.thresholdBlock * 100)}%, review
-                    ≥ {Math.round(policy.thresholdReview * 100)}%
-                  </Badge>
-                </div>
-              </div>
+                </HeroSlideshow>
+              </section>
 
-              <div className="formGrid">
-                <label className="field">
-                  <span>Agent name</span>
-                  <input
-                    value={draft.agentName}
-                    onChange={(e) =>
-                      setDraft((p) => ({ ...p, agentName: e.target.value }))
-                    }
-                    placeholder="e.g. DevOps Agent"
-                  />
-                </label>
-                <label className="field">
-                  <span>Industry</span>
-                  <input
-                    value={draft.industry}
-                    onChange={(e) =>
-                      setDraft((p) => ({ ...p, industry: e.target.value }))
-                    }
-                    placeholder="e.g. Financial Services"
-                  />
-                </label>
-                <label className="field fieldSpan2">
-                  <span>Use case</span>
-                  <input
-                    value={draft.useCase}
-                    onChange={(e) =>
-                      setDraft((p) => ({ ...p, useCase: e.target.value }))
-                    }
-                    placeholder="e.g. CI/CD automation for infra changes"
-                  />
-                </label>
-
-                <label className="field fieldSpan2">
-                  <span>Prompt</span>
-                  <textarea
-                    value={draft.prompt}
-                    onChange={(e) =>
-                      setDraft((p) => ({ ...p, prompt: e.target.value }))
-                    }
-                    placeholder="Describe the agent’s intent and requested action…"
-                    rows={5}
-                  />
-                </label>
-
-                <div className="formActions fieldSpan2">
-                  <button
-                    className="btn btnPrimary"
-                    type="button"
-                    onClick={() => runEvaluation(draft.prompt)}
-                    disabled={loading || !draft.prompt.trim()}
-                  >
-                    {loading ? "Analyzing…" : "Evaluate risk"}
-                  </button>
-                  <button
-                    className="btn btnGhost"
-                    type="button"
-                    onClick={() => setDraft((p) => ({ ...p, prompt: "" }))}
-                    disabled={loading || !draft.prompt}
-                  >
-                    Clear
-                  </button>
-                </div>
-              </div>
-            </section>
-
-            <section className="panel">
-              <div className="panelHeader">
-                <div className="panelTitle">Overview</div>
-              </div>
-
-              <div className="metricGrid">
-                <div className="metric">
-                  <div className="metricLabel">Total evaluations</div>
-                  <div className="metricValue">{stats.total}</div>
-                </div>
-                <div className="metric">
-                  <div className="metricLabel">Blocked</div>
-                  <div className="metricValue">{stats.blocked}</div>
-                </div>
-                <div className="metric">
-                  <div className="metricLabel">Needs review</div>
-                  <div className="metricValue">{stats.review}</div>
-                </div>
-                <div className="metric">
-                  <div className="metricLabel">Average risk</div>
-                  <div className="metricValue">
-                    {Math.round(stats.avgRisk * 100)}%
+              <section className="panel posturePanel">
+                <DecisionBanner
+                  empty={!selected}
+                  decision={selected?.decision ?? "ALLOW"}
+                  riskScore={selected?.riskScore ?? 0}
+                  riskLevel={selected?.riskLevel ?? null}
+                  securityStatus={selected?.securityStatus}
+                  llmGuardUsed={selected?.llmGuardUsed}
+                  overviewStats={stats}
+                />
+                {selected && (
+                  <div className="postureReasoning">
+                    <div className="detailK detailKReasoning">Reasoning</div>
+                    {selectedReasons.length === 0 ? (
+                      <div className="detailMuted detailMutedLarge">
+                        No reasons returned by the backend.
+                      </div>
+                    ) : (
+                      <ul className="reasonList reasonListLarge">
+                        {selectedReasons.slice(0, 12).map((r, i) => (
+                          <li key={`${i}-${r}`}>{r}</li>
+                        ))}
+                      </ul>
+                    )}
                   </div>
-                </div>
-              </div>
+                )}
+              </section>
 
-              <div className="divider" />
-
-              <div className="miniExplain">
-                The platform computes a risk score and applies policy to decide whether
-                the agent should be allowed, blocked, or routed for human approval.
-              </div>
-            </section>
-
-            <section className="panel panelSpan2">
-              <div className="panelHeader">
-                <div>
-                  <div className="panelTitle">Latest decision</div>
-                  <div className="panelSubtitle">
-                    Select any evaluation in the sidebar to inspect details and reasoning.
+              <div className="dashboardLower">
+                <section className="panel panelCompact">
+                  <div className="panelHeader">
+                    <div>
+                      <div className="panelTitle">Overview</div>
+                      <p className="panelSubtitle panelSubtitleTight">
+                        Roll-up of every evaluation in this browser session. Each prompt is scored,
+                        checked against policy, and assigned ALLOW, REVIEW, or BLOCK before any agent
+                        action. Use these numbers to see volume, how often the gate stops or escalates
+                        traffic, and the mean risk across all runs.
+                      </p>
+                    </div>
                   </div>
-                </div>
-              </div>
-
-              {!selected ? (
-                <div className="empty">
-                  <div className="emptyTitle">No evaluations yet</div>
-                  <div className="emptySub">
-                    Run the demo or evaluate a prompt to see the risk/decision workflow.
+                  <div className="metricGrid metricGridTight">
+                    <div className="metric">
+                      <div className="metricLabel">Total evaluations</div>
+                      <div className="metricValue">{stats.total}</div>
+                      <div className="metricHint">Prompts scored in this session</div>
+                    </div>
+                    <div className="metric">
+                      <div className="metricLabel">Blocked</div>
+                      <div className="metricValue">{stats.blocked}</div>
+                      <div className="metricHint">Risk ≥ block threshold</div>
+                    </div>
+                    <div className="metric">
+                      <div className="metricLabel">Review queue</div>
+                      <div className="metricValue">{stats.review}</div>
+                      <div className="metricHint">Keywords, medium risk, or review_required</div>
+                    </div>
+                    <div className="metric">
+                      <div className="metricLabel">Avg risk</div>
+                      <div className="metricValue">
+                        {(stats.avgRisk * 100).toFixed(1)}%
+                      </div>
+                      <div className="metricHint">Mean of all risk scores (0–100%)</div>
+                    </div>
                   </div>
+                </section>
+
+                <section className="panel panelGrow">
+                  <div className="panelHeader">
+                    <div>
+                      <div className="panelTitle">Execution trace</div>
+                      <div className="panelSubtitle">
+                        Latest run. Open the menu to browse attack logs.
+                      </div>
+                    </div>
+                  </div>
+
+                  {!selected ? (
+                    <div className="empty">
+                      <div className="emptyTitle">No evaluations yet</div>
+                      <div className="emptySub">
+                        Use the buttons above to simulate or evaluate a prompt.
+                      </div>
+                    </div>
+                  ) : (
+                    <div className="detailSplit detailSplitFull detailPad">
+                      <EvaluationDetail evaluation={selected} />
+                    </div>
+                  )}
+                </section>
+              </div>
+            </>
+          )}
+
+          {view === "evaluations" && (
+            <>
+              <section className="hero heroCompact">
+                <h1 className="heroTitle heroTitleSm">Attack logs</h1>
+                <p className="heroLead heroLeadSm">
+                  All evaluations, newest first. Select a row to open it on Control Plane.
+                </p>
+              </section>
+              <section className="panel">
+                <div className="panelHeader">
+                  <div className="panelTitle">History</div>
                 </div>
-              ) : (
-                <div className="detailSplit">
-                  <div className="decisionCard">
-                    <div className="decisionTop">
-                      <div>
-                        <div className="decisionLabel">Decision</div>
-                        <div className="decisionValue">
+                {evaluations.length === 0 ? (
+                  <div className="empty">
+                    <div className="emptyTitle">No logs yet</div>
+                    <div className="emptySub">Run a simulation or evaluation first.</div>
+                  </div>
+                ) : (
+                  <div className="table">
+                    <div className="tableHead tableHeadSophos">
+                      <div>Time</div>
+                      <div>Risk</div>
+                      <div>Decision</div>
+                      <div>Prompt</div>
+                    </div>
+                    {evaluations.map((e) => (
+                      <button
+                        key={e.id}
+                        type="button"
+                        className="tableRow tableRowSophos"
+                        onClick={() => {
+                          setSelectedId(e.id);
+                          setView("dashboard");
+                        }}
+                      >
+                        <div className="mono">
+                          {new Date(e.createdAt).toLocaleString()}
+                        </div>
+                        <div className="mono">{(e.riskScore * 100).toFixed(1)}%</div>
+                        <div>
                           <Badge
                             tone={
-                              selected.decision === "BLOCK"
+                              e.decision === "BLOCK"
                                 ? "danger"
-                                : selected.decision === "REVIEW"
+                                : e.decision === "REVIEW"
                                   ? "warning"
                                   : "success"
                             }
                           >
-                            {selected.decision}
+                            {e.decision}
                           </Badge>
                         </div>
-                      </div>
-                      <RiskMeter value={selected.riskScore} />
-                    </div>
+                        <div className="truncate">{e.prompt}</div>
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </section>
+            </>
+          )}
 
-                    <div className="decisionMeta">
-                      <div className="metaRow">
-                        <span>Agent</span>
-                        <span className="metaStrong">{selected.agentName}</span>
-                      </div>
-                      <div className="metaRow">
-                        <span>Use case</span>
-                        <span className="metaStrong">{selected.useCase}</span>
-                      </div>
-                      <div className="metaRow">
-                        <span>Risk</span>
-                        <span className="metaStrong">
-                          {Math.round(selected.riskScore * 100)}%
-                          {selected.riskLevel ? ` · ${selected.riskLevel}` : ""}
-                        </span>
-                      </div>
+          {view === "policies" && (
+            <>
+              <section className="hero heroCompact">
+                <h1 className="heroTitle heroTitleSm">Policy</h1>
+                <p className="heroLead heroLeadSm">
+                  Thresholds and review keywords for routing decisions.
+                </p>
+              </section>
+              <section className="panel">
+                <div className="policyGrid">
+                  <div className="policyBlock">
+                    <div className="policyTitle">Decision thresholds</div>
+                    <label className="rangeField">
+                      <span>
+                        Block threshold:{" "}
+                        <strong>{Math.round(policy.thresholdBlock * 100)}%</strong>
+                      </span>
+                      <input
+                        type="range"
+                        min={0}
+                        max={1}
+                        step={0.01}
+                        value={policy.thresholdBlock}
+                        onChange={(e) =>
+                          setPolicy((p) => ({
+                            ...p,
+                            thresholdBlock: clamp01(Number(e.target.value)),
+                          }))
+                        }
+                      />
+                    </label>
+                    <label className="rangeField">
+                      <span>
+                        Review threshold:{" "}
+                        <strong>{Math.round(policy.thresholdReview * 100)}%</strong>
+                      </span>
+                      <input
+                        type="range"
+                        min={0}
+                        max={1}
+                        step={0.01}
+                        value={policy.thresholdReview}
+                        onChange={(e) =>
+                          setPolicy((p) => ({
+                            ...p,
+                            thresholdReview: clamp01(Number(e.target.value)),
+                          }))
+                        }
+                      />
+                    </label>
+                    <div className="policyHint">
+                      If risk ≥ block → BLOCK. Else if keyword hit or risk ≥ review →
+                      REVIEW. Else → ALLOW.
                     </div>
                   </div>
-
-                  <EvaluationDetail evaluation={selected} />
+                  <div className="policyBlock">
+                    <div className="policyTitle">Review keywords</div>
+                    <div className="policyHint">
+                      One keyword match forces REVIEW even at lower risk scores.
+                    </div>
+                    <textarea
+                      className="policyTextarea"
+                      value={policy.requireReviewKeywords.join("\n")}
+                      onChange={(e) =>
+                        setPolicy((p) => ({
+                          ...p,
+                          requireReviewKeywords: e.target.value
+                            .split("\n")
+                            .map((s) => s.trim())
+                            .filter(Boolean),
+                        }))
+                      }
+                      rows={10}
+                    />
+                  </div>
                 </div>
-              )}
-            </section>
-          </div>
+              </section>
+            </>
+          )}
+        </main>
+
+        {evaluateOpen && (
+          <button
+            type="button"
+            className="evaluateBackdrop"
+            aria-label="Close evaluate panel"
+            onClick={() => setEvaluateOpen(false)}
+          />
         )}
-
-        {view === "evaluations" && (
-          <section className="panel">
-            <div className="panelHeader">
-              <div>
-                <div className="panelTitle">Evaluations</div>
-                <div className="panelSubtitle">
-                  Browse all past evaluations, sorted by newest first.
-                </div>
-              </div>
+        <aside
+          className={`evaluateDrawer ${evaluateOpen ? "evaluateDrawer--open" : ""}`}
+          aria-hidden={!evaluateOpen}
+        >
+          <div className="evaluateDrawerHeader">
+            <div>
+              <h2 className="evaluateDrawerTitle">Evaluate prompt</h2>
+              <p className="evaluateDrawerSub">
+                Policy: block ≥ {Math.round(policy.thresholdBlock * 100)}%, review ≥{" "}
+                {Math.round(policy.thresholdReview * 100)}%
+              </p>
             </div>
-
-            {evaluations.length === 0 ? (
-              <div className="empty">
-                <div className="emptyTitle">No evaluations to show</div>
-                <div className="emptySub">
-                  Go to Dashboard and run an evaluation to populate history.
-                </div>
-              </div>
-            ) : (
-              <div className="table">
-                <div className="tableHead">
-                  <div>Time</div>
-                  <div>Agent</div>
-                  <div>Risk</div>
-                  <div>Decision</div>
-                  <div>Prompt</div>
-                </div>
-                {evaluations.map((e) => (
-                  <button
-                    key={e.id}
-                    type="button"
-                    className="tableRow"
-                    onClick={() => {
-                      setSelectedId(e.id);
-                      setView("dashboard");
-                    }}
-                  >
-                    <div className="mono">
-                      {new Date(e.createdAt).toLocaleString()}
-                    </div>
-                    <div>{e.agentName}</div>
-                    <div className="mono">{Math.round(e.riskScore * 100)}%</div>
-                    <div>
-                      <Badge
-                        tone={
-                          e.decision === "BLOCK"
-                            ? "danger"
-                            : e.decision === "REVIEW"
-                              ? "warning"
-                              : "success"
-                        }
-                      >
-                        {e.decision}
-                      </Badge>
-                    </div>
-                    <div className="truncate">{e.prompt}</div>
-                  </button>
+            <button
+              type="button"
+              className="iconBtn evaluateDrawerClose"
+              onClick={() => setEvaluateOpen(false)}
+              aria-label="Close"
+            >
+              ×
+            </button>
+          </div>
+          <div className="evaluateDrawerBody">
+            <label className="field">
+              <span>Prompt</span>
+              <textarea
+                value={promptDraft}
+                onChange={(e) => setPromptDraft(e.target.value)}
+                placeholder="Paste or type the prompt to evaluate…"
+                rows={10}
+              />
+            </label>
+            <div className="operatorBar">
+              <div className="operatorBarTitle">Operator override (next request only)</div>
+              <div className="operatorBarOpts">
+                {[
+                  { id: null, label: "Default pipeline" },
+                  { id: "force_allow", label: "Manual permit" },
+                  { id: "force_block", label: "Manual block" },
+                  { id: "force_review", label: "Force review" },
+                ].map((o) => (
+                  <label key={o.label} className="operatorOpt">
+                    <input
+                      type="radio"
+                      name="manualOvDrawer"
+                      checked={manualOverride === o.id}
+                      onChange={() => setManualOverride(o.id)}
+                    />
+                    <span>{o.label}</span>
+                  </label>
                 ))}
               </div>
-            )}
-          </section>
-        )}
-
-        {view === "policies" && (
-          <section className="panel">
-            <div className="panelHeader">
-              <div>
-                <div className="panelTitle">Policy</div>
-                <div className="panelSubtitle">
-                  Tune the decision thresholds and keyword triggers that route requests for
-                  review or block them outright.
-                </div>
-              </div>
             </div>
-
-            <div className="policyGrid">
-              <div className="policyBlock">
-                <div className="policyTitle">Decision thresholds</div>
-
-                <label className="rangeField">
-                  <span>
-                    Block threshold:{" "}
-                    <strong>{Math.round(policy.thresholdBlock * 100)}%</strong>
-                  </span>
-                  <input
-                    type="range"
-                    min={0}
-                    max={1}
-                    step={0.01}
-                    value={policy.thresholdBlock}
-                    onChange={(e) =>
-                      setPolicy((p) => ({
-                        ...p,
-                        thresholdBlock: clamp01(Number(e.target.value)),
-                      }))
-                    }
-                  />
-                </label>
-
-                <label className="rangeField">
-                  <span>
-                    Review threshold:{" "}
-                    <strong>{Math.round(policy.thresholdReview * 100)}%</strong>
-                  </span>
-                  <input
-                    type="range"
-                    min={0}
-                    max={1}
-                    step={0.01}
-                    value={policy.thresholdReview}
-                    onChange={(e) =>
-                      setPolicy((p) => ({
-                        ...p,
-                        thresholdReview: clamp01(Number(e.target.value)),
-                      }))
-                    }
-                  />
-                </label>
-
-                <div className="policyHint">
-                  If risk ≥ block → BLOCK. Else if keyword hit or risk ≥ review → REVIEW.
-                  Else → ALLOW.
-                </div>
-              </div>
-
-              <div className="policyBlock">
-                <div className="policyTitle">Review keywords</div>
-                <div className="policyHint">
-                  One keyword match forces REVIEW even at lower risk scores.
-                </div>
-                <textarea
-                  className="policyTextarea"
-                  value={policy.requireReviewKeywords.join("\n")}
-                  onChange={(e) =>
-                    setPolicy((p) => ({
-                      ...p,
-                      requireReviewKeywords: e.target.value
-                        .split("\n")
-                        .map((s) => s.trim())
-                        .filter(Boolean),
-                    }))
-                  }
-                  rows={10}
-                />
-              </div>
+            <div className="evaluateDrawerActions">
+              <button
+                type="button"
+                className="btn btnPrimary btnBlock"
+                onClick={() => runEvaluation(promptDraft)}
+                disabled={loading || !promptDraft.trim()}
+              >
+                {loading ? "Analyzing…" : "Evaluate risk"}
+              </button>
+              <button
+                type="button"
+                className="btn btnGhost btnBlock"
+                onClick={() => setPromptDraft("")}
+                disabled={loading || !promptDraft}
+              >
+                Clear
+              </button>
             </div>
-          </section>
-        )}
-      </main>
+          </div>
+        </aside>
 
-      {settingsOpen && (
-        <SettingsModal onClose={() => setSettingsOpen(false)} />
-      )}
-    </div>
+        <SiteFooter />
+      </div>
+
+      {settingsOpen && <SettingsModal onClose={() => setSettingsOpen(false)} />}
+    </>
   );
 }

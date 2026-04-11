@@ -22,6 +22,9 @@ def check_policies(agent_output: dict):
     if "secret_exposure" in risk_flags:
         violations.append("Sensitive data exposure violation")
 
+    if "data_exfiltration" in risk_flags:
+        violations.append("Data exfiltration attempt")
+
     if "destructive_action" in risk_flags:
         violations.append("Unauthorized destructive action")
 

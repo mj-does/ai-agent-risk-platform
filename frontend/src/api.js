@@ -25,6 +25,21 @@ export function setApiBaseUrl(url) {
   }
 }
 
+const SESSION_STORAGE_KEY = "airisk.session.v1";
+
+export function getSessionId() {
+  try {
+    let id = localStorage.getItem(SESSION_STORAGE_KEY);
+    if (!id) {
+      id = crypto?.randomUUID?.() || `sess-${Date.now()}`;
+      localStorage.setItem(SESSION_STORAGE_KEY, id);
+    }
+    return id;
+  } catch {
+    return null;
+  }
+}
+
 function coerceArray(v) {
   if (!v) return [];
   if (Array.isArray(v)) return v;
@@ -55,6 +70,8 @@ export async function analyzePrompt(prompt, context = {}) {
         agent_name: context.agent_name || "DevOps Agent",
         industry: context.industry || "Technology",
         use_case: context.use_case || "Automation workflow",
+        session_id: context.session_id || null,
+        manual_override: context.manual_override || null,
       }),
     });
 
@@ -88,6 +105,8 @@ export async function analyzePrompt(prompt, context = {}) {
     const graphLogged =
       typeof data?.graph_logged === "boolean" ? data.graph_logged : null;
 
+    const meta = analysis;
+
     return {
       risk_score: riskNorm, // 0–1
       risk_level: riskLevel,
@@ -97,6 +116,19 @@ export async function analyzePrompt(prompt, context = {}) {
       agent_used: agentUsed,
       prompt_id: promptId,
       graph_logged: graphLogged,
+      security_status: meta.status || null,
+      attack_categories: Array.isArray(meta.attack_categories)
+        ? meta.attack_categories
+        : [],
+      llm_guard_used: Boolean(meta.llm_guard_used),
+      regex_matched:
+        typeof meta.regex_matched === "boolean" ? meta.regex_matched : null,
+      suspicious_structure:
+        typeof meta.suspicious_structure === "boolean"
+          ? meta.suspicious_structure
+          : null,
+      session: meta.session || null,
+      manual_override: meta.manual_override || null,
       raw: data,
     };
   } catch (err) {

@@ -1,3 +1,6 @@
+import zlib
+
+
 def score_risk(agent_output: dict, policy_output: dict, payload: dict):
     """
     Advanced risk scoring using:
@@ -10,12 +13,14 @@ def score_risk(agent_output: dict, policy_output: dict, payload: dict):
     risk_score = 0
     risks = []
 
-    prompt = payload.get("prompt", "").lower()
+    prompt_raw = payload.get("prompt", "") or ""
+    prompt = prompt_raw.lower()
     description = payload.get("use_case", "").lower()
     ai_model = payload.get("agent_name", "").lower()
     industry = payload.get("industry", "").lower()
 
     risk_flags = agent_output.get("risk_flags", [])
+    attack_categories = agent_output.get("attack_categories") or []
     violations = policy_output.get("violations", [])
     injection_score = agent_output.get("injection_score", 0.0) or 0.0
     try:
@@ -23,11 +28,16 @@ def score_risk(agent_output: dict, policy_output: dict, payload: dict):
     except Exception:
         injection_score = 0.0
 
-    # 🔴 Prompt-injection / privilege escalation signals (high weight)
+    # 🔴 Prompt-injection / privilege escalation signals (graduated for score spread)
     if injection_score >= 0.4:
-        # scale 0–1 detector into up to +60 points
-        risk_score += int(round(min(1.0, injection_score) * 60))
+        risk_score += int(round(min(1.0, injection_score) * 58))
         risks.append("Prompt injection patterns detected")
+    elif injection_score >= 0.28:
+        risk_score += int(round((injection_score - 0.28) / 0.12 * 34))
+        risks.append("Elevated injection / misuse signals")
+    elif injection_score >= 0.16:
+        risk_score += int(round((injection_score - 0.16) / 0.12 * 22))
+        risks.append("Low–moderate structural risk from prompt heuristics")
 
     if "privilege_escalation" in risk_flags:
         risk_score += 25
@@ -42,6 +52,10 @@ def score_risk(agent_output: dict, policy_output: dict, payload: dict):
         risk_score += 35
         risks.append("Sensitive data exposure")
 
+    if "data_exfiltration" in risk_flags:
+        risk_score += 35
+        risks.append("Data exfiltration attempt")
+
     if "public_access" in risk_flags:
         risk_score += 25
         risks.append("Public exposure risk")
@@ -53,6 +67,11 @@ def score_risk(agent_output: dict, policy_output: dict, payload: dict):
     if "prompt_injection" in risk_flags and injection_score < 0.4:
         risk_score += 20
         risks.append("Suspicious instruction override attempt")
+
+    if isinstance(attack_categories, (list, tuple)) and attack_categories:
+        label = ", ".join(str(c) for c in attack_categories if c)
+        if label:
+            risks.append(f"Attack pattern categories: {label}")
 
     # 🟠 Policy violations
     violation_count = len(violations)
@@ -77,7 +96,13 @@ def score_risk(agent_output: dict, policy_output: dict, payload: dict):
         risk_score += 15
         risks.append("Sensitive industry")
 
+    # Spread similar prompts across a wider point band (deterministic, audit-stable)
+    crc = zlib.crc32(prompt_raw.encode("utf-8", errors="ignore")) & 0xFFFF
+    risk_score += (crc % 13) - 6
+
     # 🟢 Normalize risk level
+    risk_score = max(0, min(100, int(risk_score)))
+
     if risk_score >= 70:
         level = "HIGH"
     elif risk_score >= 40:
