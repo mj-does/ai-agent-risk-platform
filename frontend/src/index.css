@@ -1774,8 +1774,20 @@ body {
 
 .auditFieldsGrid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+  grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 10px;
+}
+
+@media (max-width: 900px) {
+  .auditFieldsGrid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 520px) {
+  .auditFieldsGrid {
+    grid-template-columns: 1fr;
+  }
 }
 
 .auditFieldBlock {
@@ -1785,12 +1797,21 @@ body {
   background: rgba(0, 0, 0, 0.28);
 }
 
+.auditFieldBlock--wide {
+  grid-column: 1 / -1;
+}
+
 .auditFieldValue {
   margin-top: 8px;
   font-size: 12px;
   color: var(--text);
   line-height: 1.4;
   word-break: break-all;
+}
+
+.auditFieldValue--multiline {
+  word-break: break-word;
+  white-space: pre-wrap;
 }
 
 .siteFooter {
@@ -2018,6 +2039,243 @@ body {
   gap: 10px;
   border-top: 1px solid rgba(255, 255, 255, 0.1);
   background: rgba(255, 255, 255, 0.03);
+}
+
+/* Offset main content so it clears the fixed risk banner */
+.appRoot--riskBanner .main.mainFluid {
+  padding-top: 72px;
+}
+
+/* High-risk block: full-width strip, ~half prior height, page stays interactive */
+.riskBlockOverlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  z-index: 2500;
+  padding: 10px max(16px, env(safe-area-inset-left)) 8px max(16px, env(safe-area-inset-right));
+  pointer-events: none;
+  box-sizing: border-box;
+}
+
+.riskBlockModal {
+  pointer-events: auto;
+  box-sizing: border-box;
+}
+
+.riskBlockModal--strip {
+  width: 100%;
+  max-height: min(26vh, 200px);
+  overflow-x: auto;
+  overflow-y: auto;
+  border-radius: 8px;
+  border: 1px solid rgba(248, 113, 113, 0.4);
+  background: linear-gradient(
+      165deg,
+      rgba(24, 12, 18, 0.98) 0%,
+      rgba(8, 12, 24, 0.98) 100%
+    );
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.45);
+  padding: 8px 12px;
+  display: grid;
+  grid-template-columns: minmax(160px, 1.1fr) minmax(220px, 1.3fr) auto;
+  gap: 10px 14px;
+  align-items: center;
+}
+
+@media (max-width: 900px) {
+  .riskBlockModal--strip {
+    grid-template-columns: 1fr;
+    max-height: min(40vh, 320px);
+  }
+}
+
+.riskBlockStripCol--msg {
+  min-width: 0;
+}
+
+.riskBlockStripCol--form {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.riskBlockStripCol--aside {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 4px;
+  flex-shrink: 0;
+}
+
+.riskBlockAsideBtn {
+  white-space: nowrap;
+}
+
+.riskBlockModalHeader {
+  margin-bottom: 10px;
+}
+
+.riskBlockModalHeader--compact {
+  margin-bottom: 4px;
+}
+
+.riskBlockTitle {
+  margin: 0;
+  font-size: 15px;
+  font-weight: 900;
+  letter-spacing: -0.02em;
+  color: var(--text);
+  line-height: 1.2;
+}
+
+.riskBlockLead {
+  margin: 2px 0 0;
+  font-size: 11px;
+  line-height: 1.3;
+  color: var(--danger);
+  font-weight: 650;
+}
+
+.riskBlockPromptBox {
+  margin-bottom: 0;
+  padding: 4px 8px;
+  border-radius: 6px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  background: rgba(0, 0, 0, 0.35);
+}
+
+.riskBlockPromptBox--strip {
+  margin-top: 4px;
+}
+
+.riskBlockPromptLabel {
+  font-size: 9px;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--muted);
+  margin-bottom: 2px;
+}
+
+.riskBlockPromptText {
+  font-size: 11px;
+  line-height: 1.25;
+  color: rgba(255, 255, 255, 0.88);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 100%;
+}
+
+.riskBlockForm {
+  display: grid;
+  gap: 8px;
+}
+
+.riskBlockInputsRow {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: flex-end;
+}
+
+.riskBlockField--inline {
+  flex: 1 1 120px;
+  min-width: 0;
+  margin: 0;
+  gap: 4px;
+}
+
+.riskBlockField--inline span {
+  font-size: 10px;
+}
+
+.riskBlockField--inline input {
+  padding: 5px 8px;
+  font-size: 12px;
+}
+
+.riskBlockField input {
+  width: 100%;
+  border-radius: 6px;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  background: rgba(10, 14, 28, 0.75);
+  color: var(--text);
+  outline: none;
+}
+
+.riskBlockActions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 4px;
+  justify-content: flex-end;
+}
+
+.riskBlockActions--strip {
+  margin-top: 2px;
+  justify-content: flex-start;
+}
+
+.riskBlockSecondary {
+  margin-top: 12px;
+  padding-top: 12px;
+  border-top: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.riskBlockHint--compact {
+  margin-top: 0;
+  font-size: 10px;
+  line-height: 1.2;
+}
+
+.riskBlockError {
+  font-size: 13px;
+  color: var(--danger);
+  margin-top: 4px;
+}
+
+.riskBlockHint {
+  margin-top: 10px;
+  font-size: 12px;
+  color: var(--success);
+}
+
+.adminQueueBar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  align-items: flex-end;
+  margin-bottom: 16px;
+}
+
+.adminQueuePw {
+  flex: 1 1 240px;
+  margin: 0;
+}
+
+.adminQueuePw input {
+  width: 100%;
+  border-radius: 12px;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  background: rgba(10, 14, 28, 0.65);
+  color: var(--text);
+  padding: 10px 12px;
+  font-size: 14px;
+}
+
+.adminQueueErr {
+  margin-bottom: 12px;
+}
+
+.adminQueueTable.tableHeadSophos,
+.adminQueueTable .tableRowSophos {
+  grid-template-columns: 168px 72px 1fr 100px;
+}
+
+.adminQueueRow {
+  align-items: center;
 }
 
 /* Responsive */

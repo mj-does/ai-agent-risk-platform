@@ -64,6 +64,15 @@ export default function Sidebar({
             Policy
           </NavItem>
           <NavItem
+            active={view === "admin"}
+            onClick={() => {
+              onView("admin");
+              close();
+            }}
+          >
+            Admin queue
+          </NavItem>
+          <NavItem
             active={false}
             onClick={() => {
               onOpenSettings();

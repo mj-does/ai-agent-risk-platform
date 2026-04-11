@@ -37,11 +37,14 @@ export default function SettingsModal({ onClose }) {
             <input
               value={apiUrl}
               onChange={(e) => setApiUrl(e.target.value)}
-              placeholder="http://127.0.0.1:8000"
+              placeholder="http://127.0.0.1:8080"
             />
           </label>
           <div className="helpText">
-            Tip: you can also set <span className="mono">VITE_API_URL</span> in your environment.
+            Must match the port where <span className="mono">uvicorn</span> runs (e.g.{" "}
+            <span className="mono">:8080</span> if 8000 is blocked). You can also set{" "}
+            <span className="mono">VITE_API_URL</span> in <span className="mono">frontend/.env.development</span>{" "}
+            and restart <span className="mono">npm run dev</span>.
           </div>
         </div>
 

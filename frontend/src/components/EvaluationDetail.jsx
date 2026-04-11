@@ -164,6 +164,9 @@ export default function EvaluationDetail({ evaluation }) {
           <div className="detailBlock auditFieldBlock">
             <div className="detailK">TigerGraph prompt_id</div>
             <div className="auditFieldValue mono">{evaluation?.promptId || "—"}</div>
+            <div className="detailMuted" style={{ marginTop: "0.35rem", fontSize: "0.82rem" }}>
+              New id every Analyze. GraphStudio may show a different prompt if you ran several tests.
+            </div>
           </div>
           <div className="detailBlock auditFieldBlock">
             <div className="detailK">Graph logged</div>
@@ -181,18 +184,54 @@ export default function EvaluationDetail({ evaluation }) {
                 : "—"}
             </div>
           </div>
-          {evaluation?.securityStatus && (
-            <div className="detailBlock auditFieldBlock">
-              <div className="detailK">Security status</div>
-              <div className="auditFieldValue mono">{evaluation.securityStatus}</div>
+          <div className="detailBlock auditFieldBlock">
+            <div className="detailK">Enforcement engine</div>
+            <div className="auditFieldValue mono">
+              {evaluation?.enforcementEngine != null &&
+              String(evaluation.enforcementEngine).trim() !== ""
+                ? evaluation.enforcementEngine
+                : "—"}
             </div>
-          )}
-          {evaluation?.manualOverride && (
+          </div>
+          <div className="detailBlock auditFieldBlock">
+            <div className="detailK">TG propagated risk</div>
+            <div className="auditFieldValue mono">
+              {evaluation?.tgPropagatedRisk != null &&
+              Number.isFinite(Number(evaluation.tgPropagatedRisk))
+                ? `${(Number(evaluation.tgPropagatedRisk) * 100).toFixed(1)}%`
+                : "—"}
+            </div>
+          </div>
+          <div className="detailBlock auditFieldBlock auditFieldBlock--wide">
+            <div className="detailK">TG decision reason</div>
+            <div className="auditFieldValue auditFieldValue--multiline">
+              {evaluation?.tgDecisionReason != null &&
+              String(evaluation.tgDecisionReason).trim() !== ""
+                ? evaluation.tgDecisionReason
+                : "—"}
+            </div>
+          </div>
+          <div className="detailBlock auditFieldBlock">
+            <div className="detailK">Affected systems</div>
+            <div className="auditFieldValue mono">
+              {Array.isArray(evaluation?.tgAffectedSystems) &&
+              evaluation.tgAffectedSystems.length > 0
+                ? evaluation.tgAffectedSystems.join(", ")
+                : "—"}
+            </div>
+          </div>
+          <div className="detailBlock auditFieldBlock">
+            <div className="detailK">Security status</div>
+            <div className="auditFieldValue mono">
+              {evaluation?.securityStatus || "—"}
+            </div>
+          </div>
+          {evaluation?.manualOverride ? (
             <div className="detailBlock auditFieldBlock">
               <div className="detailK">Operator override</div>
               <div className="auditFieldValue mono">{evaluation.manualOverride}</div>
             </div>
-          )}
+          ) : null}
         </div>
       </div>
     </div>

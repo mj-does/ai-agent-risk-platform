@@ -1,4 +1,5 @@
-const API_STORAGE_KEY = "airisk.api.baseUrl";
+/* Bumped so an old saved :8000 URL cannot override the dev default :8080. */
+const API_STORAGE_KEY = "airisk.api.baseUrl.v2";
 
 function normalizeBaseUrl(url) {
   const trimmed = (url || "").trim().replace(/\/+$/, "");
@@ -14,7 +15,7 @@ export function getApiBaseUrl() {
   } catch {
     // ignore
   }
-  return "http://127.0.0.1:8000";
+  return "http://127.0.0.1:8080";
 }
 
 export function setApiBaseUrl(url) {
@@ -106,6 +107,41 @@ export async function analyzePrompt(prompt, context = {}) {
       typeof data?.graph_logged === "boolean" ? data.graph_logged : null;
 
     const meta = analysis;
+    const auditTop = data?.audit || {};
+    /* Prefer nested audit/analysis; fall back to top-level keys (API mirrors these). */
+    const audit = {
+      enforcement_engine:
+        auditTop.enforcement_engine ??
+        analysis?.enforcement_engine ??
+        data?.enforcement_engine ??
+        null,
+      tg_propagated_risk:
+        auditTop.tg_propagated_risk ??
+        analysis?.tg_propagated_risk ??
+        data?.tg_propagated_risk ??
+        null,
+      tg_affected_systems:
+        auditTop.tg_affected_systems ??
+        analysis?.tg_affected_systems ??
+        data?.tg_affected_systems ??
+        null,
+      tg_decision_reason:
+        auditTop.tg_decision_reason ??
+        analysis?.tg_decision_reason ??
+        data?.tg_decision_reason ??
+        null,
+    };
+
+    function numOrNull(v) {
+      if (typeof v === "number" && Number.isFinite(v)) return v;
+      if (typeof v === "string" && v.trim() !== "") {
+        const n = Number(v);
+        return Number.isFinite(n) ? n : null;
+      }
+      return null;
+    }
+
+    const tgPropagated = numOrNull(audit.tg_propagated_risk);
 
     return {
       risk_score: riskNorm, // 0–1
@@ -129,6 +165,12 @@ export async function analyzePrompt(prompt, context = {}) {
           : null,
       session: meta.session || null,
       manual_override: meta.manual_override || null,
+      enforcement_engine: audit.enforcement_engine ?? null,
+      tg_propagated_risk: tgPropagated,
+      tg_affected_systems: Array.isArray(audit.tg_affected_systems)
+        ? audit.tg_affected_systems
+        : [],
+      tg_decision_reason: audit.tg_decision_reason ?? null,
       raw: data,
     };
   } catch (err) {
@@ -136,4 +178,57 @@ export async function analyzePrompt(prompt, context = {}) {
     console.error("API ERROR:", err);
     return null;
   }
+}
+
+export async function verifyAdminCredentials(adminId, adminPassword) {
+  const API_URL = getApiBaseUrl();
+  try {
+    const res = await fetch(`${API_URL}/admin/verify`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        admin_id: adminId,
+        admin_password: adminPassword,
+      }),
+    });
+    if (!res.ok) return false;
+    const data = await res.json();
+    return Boolean(data?.ok);
+  } catch {
+    return false;
+  }
+}
+
+export async function submitEscalationRequest(payload) {
+  const API_URL = getApiBaseUrl();
+  const res = await fetch(`${API_URL}/admin/escalation_requests`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload),
+  });
+  if (!res.ok) throw new Error(`Escalation failed (${res.status})`);
+  return res.json();
+}
+
+export async function listEscalationRequests(adminPassword) {
+  const API_URL = getApiBaseUrl();
+  const res = await fetch(`${API_URL}/admin/escalation_requests`, {
+    headers: {
+      "X-Admin-Password": adminPassword || "",
+    },
+  });
+  if (!res.ok) throw new Error(`List failed (${res.status})`);
+  return res.json();
+}
+
+export async function dismissEscalationRequest(requestId, adminPassword) {
+  const API_URL = getApiBaseUrl();
+  const res = await fetch(`${API_URL}/admin/escalation_requests/${requestId}`, {
+    method: "DELETE",
+    headers: {
+      "X-Admin-Password": adminPassword || "",
+    },
+  });
+  if (!res.ok) throw new Error(`Dismiss failed (${res.status})`);
+  return res.json();
 }

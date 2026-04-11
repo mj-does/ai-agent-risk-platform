@@ -1,3 +1,19 @@
+# AIRiskGraph — extended model (User/Session, policy, data class, model provider,
+# fan-out tools, ticket/approval, mitigation controls).
+# If upgrading from the old 5-vertex graph: DROP GRAPH AIRiskGraph (destroys data), then reload this file and CREATE GRAPH.
+
+CREATE VERTEX User (
+  PRIMARY_ID user_id STRING,
+  email STRING,
+  role STRING
+)
+
+CREATE VERTEX Session (
+  PRIMARY_ID session_id STRING,
+  label STRING,
+  session_risk FLOAT
+)
+
 CREATE VERTEX Prompt (
   PRIMARY_ID prompt_id STRING,
   text STRING,
@@ -7,10 +23,28 @@ CREATE VERTEX Prompt (
   status STRING
 )
 
+CREATE VERTEX PolicyRule (
+  PRIMARY_ID rule_id STRING,
+  rule_name STRING,
+  sensitivity STRING
+)
+
+CREATE VERTEX DataClass (
+  PRIMARY_ID class_id STRING,
+  label STRING,
+  tier FLOAT
+)
+
 CREATE VERTEX Agent (
   PRIMARY_ID agent_id STRING,
   agent_name STRING,
   agent_type STRING
+)
+
+CREATE VERTEX ModelProvider (
+  PRIMARY_ID provider_id STRING,
+  vendor STRING,
+  model_name STRING
 )
 
 CREATE VERTEX Tool (
@@ -31,30 +65,128 @@ CREATE VERTEX System (
   criticality FLOAT
 )
 
+CREATE VERTEX Ticket (
+  PRIMARY_ID ticket_id STRING,
+  status STRING,
+  channel STRING,
+  opened_at STRING
+)
+
+CREATE VERTEX Approval (
+  PRIMARY_ID approval_id STRING,
+  status STRING,
+  resolved_at STRING
+)
+
+CREATE VERTEX Control (
+  PRIMARY_ID control_id STRING,
+  name STRING,
+  effectiveness FLOAT
+)
+
+# --- Edges with weights / time / revocation (revoked: 0 = active, 1 = revoked) ---
+
+CREATE DIRECTED EDGE USER_OWNS_SESSION (
+  FROM User, TO Session,
+  confidence FLOAT,
+  observed_at STRING,
+  revoked INT
+)
+
+CREATE DIRECTED EDGE SESSION_SUBMITS_PROMPT (
+  FROM Session, TO Prompt,
+  confidence FLOAT,
+  observed_at STRING,
+  revoked INT
+)
+
+CREATE DIRECTED EDGE POLICY_APPLIES_TO (
+  FROM PolicyRule, TO Prompt,
+  severity_weight FLOAT
+)
+
+CREATE DIRECTED EDGE DATACLASS_LABELS_SYSTEM (
+  FROM DataClass, TO System,
+  coverage FLOAT
+)
+
 CREATE DIRECTED EDGE PROMPT_TRIGGERS_AGENT (
   FROM Prompt, TO Agent,
-  risk_passed FLOAT
+  risk_passed FLOAT,
+  confidence FLOAT,
+  observed_at STRING,
+  revoked INT
+)
+
+CREATE DIRECTED EDGE AGENT_ROUTES_TO_MODEL (
+  FROM Agent, TO ModelProvider,
+  confidence FLOAT,
+  observed_at STRING,
+  revoked INT
+)
+
+CREATE DIRECTED EDGE MODEL_INVOKES_TOOL (
+  FROM ModelProvider, TO Tool,
+  weight FLOAT,
+  observed_at STRING,
+  revoked INT
 )
 
 CREATE DIRECTED EDGE AGENT_USES_TOOL (
   FROM Agent, TO Tool,
+  confidence FLOAT,
+  observed_at STRING,
+  revoked INT,
   timestamp STRING
 )
 
 CREATE DIRECTED EDGE TOOL_EXECUTES_ACTION (
   FROM Tool, TO Action,
-  timestamp STRING
+  timestamp STRING,
+  weight FLOAT,
+  observed_at STRING,
+  revoked INT
 )
 
 CREATE DIRECTED EDGE ACTION_AFFECTS_SYSTEM (
   FROM Action, TO System,
-  impact_score FLOAT
+  impact_score FLOAT,
+  observed_at STRING,
+  revoked INT
+)
+
+CREATE DIRECTED EDGE ACTION_MITIGATED_BY (
+  FROM Action, TO Control,
+  mitigated_at STRING,
+  confidence FLOAT
+)
+
+CREATE DIRECTED EDGE PROMPT_RAISES_TICKET (
+  FROM Prompt, TO Ticket,
+  reason_code STRING,
+  opened_at STRING
+)
+
+CREATE DIRECTED EDGE TICKET_AWAITING_APPROVAL (
+  FROM Ticket, TO Approval,
+  status STRING,
+  updated_at STRING
 )
 
 CREATE GRAPH AIRiskGraph(
-  Prompt, Agent, Tool, Action, System,
+  User, Session, Prompt, PolicyRule, DataClass, Agent, ModelProvider, Tool, Action, System,
+  Ticket, Approval, Control,
+  USER_OWNS_SESSION,
+  SESSION_SUBMITS_PROMPT,
+  POLICY_APPLIES_TO,
+  DATACLASS_LABELS_SYSTEM,
   PROMPT_TRIGGERS_AGENT,
+  AGENT_ROUTES_TO_MODEL,
+  MODEL_INVOKES_TOOL,
   AGENT_USES_TOOL,
   TOOL_EXECUTES_ACTION,
-  ACTION_AFFECTS_SYSTEM
+  ACTION_AFFECTS_SYSTEM,
+  ACTION_MITIGATED_BY,
+  PROMPT_RAISES_TICKET,
+  TICKET_AWAITING_APPROVAL
 )

@@ -6,11 +6,18 @@ import EvaluationDetail from "./components/EvaluationDetail";
 import SettingsModal from "./components/SettingsModal";
 import HeroSlideshow from "./components/HeroSlideshow";
 import SiteFooter from "./components/SiteFooter";
-import { analyzePrompt, getSessionId } from "./api";
+import {
+  analyzePrompt,
+  getSessionId,
+  verifyAdminCredentials,
+  submitEscalationRequest,
+} from "./api";
+import RiskBlockModal from "./components/RiskBlockModal";
+import AdminQueue from "./components/AdminQueue";
 import { formatReasonList } from "./utils/evaluationFormat";
 import { attackPrompts } from "./data";
 
-const STORAGE_KEY = "airisk.ui.v1";
+const STORAGE_KEY = "airisk.ui.v4";
 
 const API_CONTEXT_DEFAULTS = {
   agent_name: "DevOps Agent",
@@ -62,6 +69,9 @@ export default function App() {
   const [manualOverride, setManualOverride] = useState(null);
   const lastSimIndex = useRef(-1);
   const analysisBusy = useRef(false);
+  const [blockGate, setBlockGate] = useState(null);
+  const [blockBusy, setBlockBusy] = useState(false);
+  const [escalateBusy, setEscalateBusy] = useState(false);
 
   useEffect(() => {
     try {
@@ -108,10 +118,14 @@ export default function App() {
     return formatReasonList(selected.reasons, selected.backendExplanation);
   }, [selected]);
 
-  async function runEvaluation(promptText) {
+  async function runEvaluation(promptText, options = {}) {
+    const { skipBlockUi = false, manualOverride: explicitOverride } = options;
     const trimmed = (promptText || "").trim();
     if (!trimmed) return;
     if (analysisBusy.current) return;
+
+    const overrideForRequest =
+      explicitOverride !== undefined ? explicitOverride : manualOverride;
 
     analysisBusy.current = true;
     setLoading(true);
@@ -120,7 +134,7 @@ export default function App() {
       res = await analyzePrompt(trimmed, {
         ...API_CONTEXT_DEFAULTS,
         session_id: getSessionId(),
-        manual_override: manualOverride,
+        manual_override: overrideForRequest,
       });
     } finally {
       setLoading(false);
@@ -142,6 +156,22 @@ export default function App() {
       policy
     );
 
+    const raw = res.raw && typeof res.raw === "object" ? res.raw : {};
+    const pickAudit = (k) =>
+      res[k] ?? raw[k] ?? raw.audit?.[k] ?? raw.analysis?.[k];
+    const tgNum = (() => {
+      const v = pickAudit("tg_propagated_risk");
+      if (typeof v === "number" && Number.isFinite(v)) return v;
+      if (typeof v === "string" && v.trim() !== "") {
+        const n = Number(v);
+        return Number.isFinite(n) ? n : null;
+      }
+      return null;
+    })();
+    const sysRaw = pickAudit("tg_affected_systems");
+    const tgAff =
+      Array.isArray(sysRaw) ? sysRaw : Array.isArray(res.tg_affected_systems) ? res.tg_affected_systems : [];
+
     const ev = {
       id: crypto?.randomUUID?.() || String(Date.now()),
       createdAt: new Date().toISOString(),
@@ -161,11 +191,62 @@ export default function App() {
         : [],
       llmGuardUsed: Boolean(res.llm_guard_used),
       manualOverride: res.manual_override || null,
+      adminBypass:
+        explicitOverride === "force_allow" && decision === "ALLOW",
+      enforcementEngine: pickAudit("enforcement_engine") ?? null,
+      tgPropagatedRisk: tgNum,
+      tgAffectedSystems: tgAff,
+      tgDecisionReason: pickAudit("tg_decision_reason") ?? null,
     };
 
     setEvaluations((prev) => [ev, ...prev]);
     setSelectedId(ev.id);
     setView("dashboard");
+
+    if (decision === "BLOCK" && !skipBlockUi) {
+      setBlockGate({ prompt: trimmed, evaluation: ev });
+    }
+  }
+
+  function handleBlockCancel() {
+    setBlockGate(null);
+  }
+
+  async function handleBlockApprove(adminId, adminPassword) {
+    if (!blockGate) return false;
+    setBlockBusy(true);
+    try {
+      const ok = await verifyAdminCredentials(adminId, adminPassword);
+      if (!ok) return false;
+      const { prompt } = blockGate;
+      await runEvaluation(prompt, {
+        skipBlockUi: true,
+        manualOverride: "force_allow",
+      });
+      setBlockGate(null);
+      return true;
+    } finally {
+      setBlockBusy(false);
+    }
+  }
+
+  async function handleSendToAdmin() {
+    if (!blockGate?.evaluation) return;
+    setEscalateBusy(true);
+    try {
+      const e = blockGate.evaluation;
+      await submitEscalationRequest({
+        prompt: e.prompt,
+        prompt_id: e.promptId,
+        session_id: getSessionId(),
+        risk_score_normalized: e.riskScore,
+        risk_level: e.riskLevel,
+        decision: e.decision,
+      });
+      setBlockGate(null);
+    } finally {
+      setEscalateBusy(false);
+    }
   }
 
   async function simulateOne() {
@@ -196,7 +277,7 @@ export default function App() {
         <div className="bgMotionOrb bgMotionOrb4" />
       </div>
 
-      <div className="appRoot">
+      <div className={blockGate ? "appRoot appRoot--riskBanner" : "appRoot"}>
         {sidebarOpen && (
           <button
             type="button"
@@ -424,6 +505,18 @@ export default function App() {
             </>
           )}
 
+          {view === "admin" && (
+            <>
+              <section className="hero heroCompact">
+                <h1 className="heroTitle heroTitleSm">Admin console</h1>
+                <p className="heroLead heroLeadSm">
+                  Review escalation requests sent when a high-risk prompt is blocked.
+                </p>
+              </section>
+              <AdminQueue />
+            </>
+          )}
+
           {view === "policies" && (
             <>
               <section className="hero heroCompact">
@@ -590,6 +683,17 @@ export default function App() {
       </div>
 
       {settingsOpen && <SettingsModal onClose={() => setSettingsOpen(false)} />}
+
+      {blockGate && (
+        <RiskBlockModal
+          promptPreview={blockGate.evaluation?.prompt}
+          onCancel={handleBlockCancel}
+          onApprove={handleBlockApprove}
+          onSendToAdmin={handleSendToAdmin}
+          busyApprove={blockBusy}
+          busyEscalate={escalateBusy}
+        />
+      )}
     </>
   );
 }
